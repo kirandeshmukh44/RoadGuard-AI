@@ -1,0 +1,16 @@
+{
+  "name": "pothole-detection-user",
+  "version": "1.0.0",
+  "description": "User Module - Pothole Detection System",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && venv\\Scripts\\python.exe main.py",
+    "dev:frontend": "cd frontend && npm run dev",
+    "train:model": "backend\\venv\\Scripts\\python.exe backend\\train_pothole_model.py",
+    "build": "cd frontend && npm run build",
+    "preview": "cd frontend && npm run preview"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.5"
+  }
+}

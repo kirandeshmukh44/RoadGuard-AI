@@ -1,0 +1,38 @@
+# Installed dependencies and build output
+**/node_modules/
+**/dist/
+**/coverage/
+
+# Local Python environments and cache
+**/venv/
+**/.venv/
+**/__pycache__/
+*.py[cod]
+
+# Local settings and secrets
+**/.env
+**/.env.*
+!**/.env.example
+
+# Local database, uploaded media, generated reports, and logs
+**/*.db
+**/*.db-shm
+**/*.db-wal
+User/backend/uploads/
+User/backend/reports/
+**/*.log
+*.bak
+
+# Dataset and generated model artifacts are kept locally, not committed to Git
+User/backend/Dataset from kaggle/
+**/training_runs/
+**/models/*.pt
+**/models/*.onnx
+**/models/*.engine
+yolov8n.pt
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
