@@ -31,31 +31,31 @@ The dataset and `.pt` weight files are intentionally ignored by Git because they
 
 ## Run the backend
 
-From the project root, use:
+From the `User` folder, use:
 
 ```bash
 npm run dev:backend
 ```
 
-To run it manually, change to `backend` and activate the Python virtual environment:
+To run it manually in Windows PowerShell, change to `User/backend` and activate the Python virtual environment:
 
-```bash
-cd backend
-venv\Scripts\activate
+```powershell
+cd User/backend
+.\venv\Scripts\Activate.ps1
 python main.py
 ```
 
-On macOS/Linux, activate with `source venv/bin/activate`. The default API address is `http://localhost:8003`; interactive API docs are at `/docs`. `API_PORT` changes the port. The root launcher selects a free port automatically and sets the frontend origin.
+In Command Prompt, use `venv\Scripts\activate.bat`. On macOS/Linux, activate with `source venv/bin/activate`. The default API address is `http://localhost:8005`; interactive API docs are at `/docs`. `API_PORT` changes the port. The root launcher selects a free port automatically and sets the frontend origin.
 
 ## Dependencies
 
-Create a virtual environment and install the pinned dependencies from the repository root:
+From the repository root, create a virtual environment and install the pinned dependencies:
 
-```bash
-python -m venv backend/venv
-backend/venv/Scripts/python -m pip install -r backend/requirements.txt
+```powershell
+py -3.12 -m venv User/backend/venv
+User/backend/venv/Scripts/python.exe -m pip install -r User/backend/requirements.txt
 ```
 
-On macOS/Linux, use `backend/venv/bin/python`.
+On macOS/Linux, use `python3 -m venv User/backend/venv` and `User/backend/venv/bin/python -m pip install -r User/backend/requirements.txt`.
 
 See the root [PROJECT_GUIDE.md](../PROJECT_GUIDE.md) for API areas, database records, model/data paths, and the complete run instructions.

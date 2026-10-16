@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 
 const Navbar = () => {
   const { user, logout, isAdmin } = useAuth();
-  const location = useLocation();
+  const location = useLocation();98
   const publicLinks = [['/', 'Overview'], ['/about', 'About'], ['/how-it-works', 'How it works'], ['/map', 'Road map']];
   const privateLinks = [['/dashboard', 'Dashboard'], ['/detect', 'Detect'], ['/report', 'Report'], ['/my-reports', 'My reports'], ['/map', 'Map']];
   const navLinkClass = ({ isActive }) =>
