@@ -4,10 +4,8 @@ import { potholeAPI } from '../api';
 import { motion } from 'framer-motion';
 import 'leaflet/dist/leaflet.css';
 
-const hasGps = (p) => Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude))
-  && Number(p.latitude) >= -90 && Number(p.latitude) <= 90
-  && Number(p.longitude) >= -180 && Number(p.longitude) <= 180
-  && (Number(p.latitude) !== 0 || Number(p.longitude) !== 0);
+const hasGps = (p) => Number(p.latitude) >= 6 && Number(p.latitude) <= 38
+  && Number(p.longitude) >= 68 && Number(p.longitude) <= 98;
 
 const distanceKm = (first, second) => {
   const radians = (degrees) => (degrees * Math.PI) / 180;
@@ -43,6 +41,8 @@ const RoadMap = () => {
   const [userLocation, setUserLocation] = useState(null);
   const [nearMeEnabled, setNearMeEnabled] = useState(false);
   const [locationError, setLocationError] = useState('');
+  const [mapError, setMapError] = useState('');
+  const [tilesError, setTilesError] = useState(false);
 
   useEffect(() => {
     fetchPotholes();
@@ -54,10 +54,19 @@ const RoadMap = () => {
 
   const fetchPotholes = async ({ quiet = false } = {}) => {
     try {
-      const response = await potholeAPI.getAll({ limit: 1000 });
+      let response;
+      try {
+        response = await potholeAPI.getMapPotholes();
+      } catch (error) {
+        // A still-running older backend may not have the optimized endpoint yet.
+        if (error.response?.status !== 404) throw error;
+        response = await potholeAPI.getAll({ limit: 1000 });
+      }
       setPotholes(Array.isArray(response.data) ? response.data : []);
+      setMapError('');
     } catch (error) {
       console.error('Error fetching potholes:', error);
+      setMapError('Could not load shared pothole locations. Check your connection and refresh the map.');
     } finally {
       if (!quiet) setLoading(false);
     }
@@ -109,14 +118,6 @@ const RoadMap = () => {
     low: mappedPotholes.filter(p => p.severity === 'low').length,
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <span className="loading loading-spinner loading-lg text-cyan-400"></span>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <motion.div
@@ -129,6 +130,8 @@ const RoadMap = () => {
           Shared GPS reports from users across India. Choose “Near me” to check roads within 25 km.
         </p>
       </motion.div>
+      {loading && <p role="status" className="text-center text-sm text-gray-400">Loading pothole locations… The map can be used while reports load.</p>}
+      {mapError && <p role="alert" className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-center text-sm text-amber-200">{mapError}</p>}
 
       {/* Statistics Cards */}
       <motion.div
@@ -209,11 +212,19 @@ const RoadMap = () => {
         <MapContainer
           center={[20.5937, 78.9629]}
           zoom={5}
+          preferCanvas
           style={{ height: '100%', width: '100%' }}
         >
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            keepBuffer={2}
+            updateWhenIdle
+            updateWhenZooming={false}
+            eventHandlers={{
+              tileerror: () => setTilesError(true),
+              load: () => setTilesError(false),
+            }}
           />
           <FitPotholeBounds potholes={filteredPotholes} userLocation={userLocation} />
           {userLocation && <CircleMarker center={[userLocation.latitude, userLocation.longitude]} radius={10} pathOptions={{ color: '#ffffff', fillColor: '#7c3aed', fillOpacity: 1, weight: 3 }}><Popup>Your current location</Popup></CircleMarker>}
@@ -248,7 +259,8 @@ const RoadMap = () => {
           ))}
         </MapContainer>
       </motion.div>
-      {filteredPotholes.length === 0 && <div className="-mt-4 rounded-xl border border-slate-700 bg-slate-900/70 p-4 text-center text-sm text-gray-300">No potholes with GPS coordinates match these filters yet.</div>}
+      {tilesError && <p role="alert" className="-mt-4 text-center text-sm text-amber-300">Map background tiles need an internet connection. Your pothole locations will still load.</p>}
+      {!loading && !mapError && filteredPotholes.length === 0 && <div className="-mt-4 rounded-xl border border-slate-700 bg-slate-900/70 p-4 text-center text-sm text-gray-300">No potholes with GPS coordinates match these filters yet.</div>}
 
       {/* Legend */}
       <motion.div

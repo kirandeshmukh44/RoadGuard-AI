@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { potholeAPI } from '../api';
 import { motion } from 'framer-motion';
 import {
@@ -25,6 +26,7 @@ const Dashboard = () => {
   });
   const [recentPotholes, setRecentPotholes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     fetchDashboardData();
@@ -45,6 +47,7 @@ const Dashboard = () => {
       setRecentPotholes(potholes.slice(0, 5));
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+      setLoadError('Could not load your report statistics. You can still use the dashboard and try again later.');
     } finally {
       setLoading(false);
     }
@@ -103,20 +106,11 @@ const Dashboard = () => {
     }
   ];
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-700 text-lg font-medium">Loading dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {loading && <div role="status" className="mb-4 text-sm text-slate-500">Loading your report statistics…</div>}
+        {loadError && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{loadError}</div>}
         {/* Welcome Section */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}

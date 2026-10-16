@@ -52,7 +52,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,6 +62,14 @@ app.add_middleware(
 # Mount static directories
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 app.mount("/reports", StaticFiles(directory=str(REPORTS_DIR)), name="reports")
+
+
+def require_detection_model():
+    if not detector.model_loaded:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI detection is temporarily unavailable because the pothole model is not installed on the server. Please contact the site administrator."
+        )
 
 
 # Health check
@@ -147,6 +155,7 @@ async def detect_potholes(
     db: Session = Depends(get_db)
 ):
     """Upload and detect potholes in an image using AI."""
+    require_detection_model()
     # Validate file type
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(
@@ -176,14 +185,10 @@ async def detect_potholes(
     if not detection_result["success"]:
         # Clean up file if detection failed
         os.remove(file_path)
-        return DetectionResult(
-            potholes_detected=0,
-            severity=SeverityLevel.LOW,
-            confidence=0.0,
-            bounding_boxes=[],
-            image_path="",
-            annotated_image_path="",
-            message=detection_result["message"]
+        print(f"Image inference failed: {detection_result['message']}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The server could not process this image. Please upload a valid JPEG or PNG image and try again."
         )
     
     # Create annotated image with bounding boxes
@@ -271,6 +276,7 @@ async def detect_potholes_video(
     db: Session = Depends(get_db)
 ):
     """Upload and detect potholes in a video using AI."""
+    require_detection_model()
     # Validate file type
     extension = Path(file.filename or "").suffix.lower()
     allowed_video_extensions = {".mp4", ".avi", ".mov"}
@@ -303,22 +309,12 @@ async def detect_potholes_video(
     
     if not detection_result["success"]:
         # Clean up file if detection failed
-        os.remove(file_path)
-        return DetectionResult(
-            potholes_detected=0,
-            severity=SeverityLevel.LOW,
-            confidence=0.0,
-            bounding_boxes=[],
-            image_path="",
-            annotated_image_path="",
-            message=detection_result["message"],
-            detection_method="ai_video",
-            frames_processed=detection_result.get("frames_processed", 0),
-            total_frames=None,
-            video_fps=None,
-            all_detections=None,
-            detections_across_frames=None,
-            severity_basis="This estimate does not measure pothole depth."
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        print(f"Video inference failed: {detection_result['message']}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The server could not read this video. Please upload a valid MP4, AVI, or MOV video and try again."
         )
     
     # Check for duplicates
@@ -514,6 +510,44 @@ def get_potholes(
     
     potholes = query.order_by(Pothole.created_at.desc()).offset(skip).limit(limit).all()
     return [PotholeResponse.model_validate(p) for p in potholes]
+
+
+@app.get("/api/map/potholes")
+def get_map_potholes(db: Session = Depends(get_db)):
+    """Return lightweight shared pothole data needed to draw the public map."""
+    records = (
+        db.query(
+            Pothole.id,
+            Pothole.user_id,
+            Pothole.latitude,
+            Pothole.longitude,
+            Pothole.road_name,
+            Pothole.severity,
+            Pothole.confidence,
+            Pothole.status,
+            Pothole.created_at,
+            User.username,
+        )
+        .outerjoin(User, Pothole.user_id == User.id)
+        .filter(Pothole.latitude != 0, Pothole.longitude != 0)
+        .order_by(Pothole.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": row.id,
+            "user_id": row.user_id,
+            "latitude": row.latitude,
+            "longitude": row.longitude,
+            "road_name": row.road_name,
+            "severity": row.severity.value if row.severity else "low",
+            "confidence": row.confidence or 0,
+            "status": row.status.value if row.status else "pending",
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "reported_by": row.username,
+        }
+        for row in records
+    ]
 
 
 @app.get("/api/potholes/{pothole_id}", response_model=PotholeResponse)
@@ -1029,6 +1063,7 @@ async def detect_batch(
     db: Session = Depends(get_db)
 ):
     """Batch detect potholes in multiple images (max 20 files)."""
+    require_detection_model()
     if len(files) > 20:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

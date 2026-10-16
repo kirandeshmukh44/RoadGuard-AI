@@ -20,6 +20,10 @@ import {
 } from 'lucide-react';
 
 const Detect = () => {
+  const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+  const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
+  const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/jpg'];
+  const VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/avi'];
   const [mode, setMode] = useState('single');
   const [file, setFile] = useState(null);
   const [files, setFiles] = useState([]);
@@ -41,22 +45,42 @@ const Detect = () => {
 
     if (mode === 'single') {
       const selectedFile = selectedFiles[0];
-      const type = selectedFile.type.startsWith('video/') ? 'video' : 'image';
+      const type = VIDEO_TYPES.includes(selectedFile.type) ? 'video' : 'image';
+      const allowedTypes = type === 'video' ? VIDEO_TYPES : IMAGE_TYPES;
+      const maxSize = type === 'video' ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
+      if (!allowedTypes.includes(selectedFile.type)) {
+        setError('Unsupported file type. Choose a JPEG/PNG image or MP4/AVI/MOV video.');
+        e.target.value = '';
+        return;
+      }
+      if (selectedFile.size > maxSize) {
+        setError(`File is too large. Maximum size is ${type === 'video' ? '50 MB' : '10 MB'}.`);
+        e.target.value = '';
+        return;
+      }
+      if (preview) URL.revokeObjectURL(preview);
       setFileType(type);
       setFile(selectedFile);
       setPreview(URL.createObjectURL(selectedFile));
     } else {
-      const imageFiles = selectedFiles.filter(f => f.type.startsWith('image/'));
-      if (imageFiles.length === 0) {
-        setError('Please select image files for batch detection');
+      if (selectedFiles.some((f) => !IMAGE_TYPES.includes(f.type))) {
+        setError('Batch detection accepts JPEG or PNG images only.');
+        e.target.value = '';
         return;
       }
-      if (imageFiles.length > 20) {
+      if (selectedFiles.some((f) => f.size > MAX_IMAGE_SIZE)) {
+        setError('Each batch image must be 10 MB or smaller.');
+        e.target.value = '';
+        return;
+      }
+      if (selectedFiles.length > 20) {
         setError('Maximum 20 images per batch');
+        e.target.value = '';
         return;
       }
-      setFiles(imageFiles);
-      setPreviews(imageFiles.map(f => URL.createObjectURL(f)));
+      previews.forEach((url) => URL.revokeObjectURL(url));
+      setFiles(selectedFiles);
+      setPreviews(selectedFiles.map(f => URL.createObjectURL(f)));
     }
     setResult(null);
     setBatchResults([]);
@@ -101,8 +125,15 @@ const Detect = () => {
       }
     }
 
+    const latitude = Number(location.latitude);
+    const longitude = Number(location.longitude);
     if (!location.latitude || !location.longitude) {
       setError('Add the pothole location first. Reports without GPS coordinates cannot appear on the shared road map.');
+      return;
+    }
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
+      || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      setError('Enter valid GPS coordinates: latitude from -90 to 90 and longitude from -180 to 180.');
       return;
     }
 
@@ -137,13 +168,23 @@ const Detect = () => {
         });
       }
     } catch (error) {
-      setError(error.response?.data?.detail || 'Detection failed. Please try again.');
+      const detail = error.response?.data?.detail;
+      const message = typeof detail === 'string' ? detail : Array.isArray(detail)
+        ? detail.map((item) => item.msg).filter(Boolean).join('. ')
+        : '';
+      setError(message || (error.code === 'ERR_NETWORK'
+        ? 'Cannot reach the detection server. Check your internet connection and try again.'
+        : error.response?.status === 413
+          ? 'The selected file is too large for the server. Choose a smaller file.'
+          : 'Detection failed. Please try a JPEG/PNG image or an MP4/AVI/MOV video, then retry.'));
     } finally {
       setLoading(false);
     }
   };
 
   const resetForm = () => {
+    if (preview) URL.revokeObjectURL(preview);
+    previews.forEach((url) => URL.revokeObjectURL(url));
     setFile(null);
     setFiles([]);
     setPreview(null);
@@ -229,7 +270,7 @@ const Detect = () => {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/jpeg,image/jpg,image/png,video/mp4,video/avi,video/mov"
+                    accept="image/jpeg,image/jpg,image/png,video/mp4,video/avi,video/x-msvideo,video/quicktime,.mp4,.avi,.mov"
                     onChange={handleFileChange}
                     className="hidden"
                     id="file-upload"
@@ -515,7 +556,7 @@ const Detect = () => {
                   <div>
                     <div className="text-sm font-semibold text-gray-700 mb-3">Detected Image (with Bounding Boxes)</div>
                     <img
-                      src={`${import.meta.env.VITE_API_URL || 'http://localhost:8005'}${result.annotated_image_path}`}
+                      src={new URL(result.annotated_image_path, import.meta.env.VITE_API_URL || window.location.origin).toString()}
                       alt="Detected with Bounding Boxes"
                       className="w-full h-64 object-cover rounded-xl"
                     />

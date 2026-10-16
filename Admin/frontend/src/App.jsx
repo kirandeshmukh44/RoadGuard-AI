@@ -146,24 +146,33 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (adminAuth) {
-      adminFetch('/session')
-        .then((response) => {
-          if (!response.ok) throw new Error('Admin session expired');
-          return response.json();
-        })
-        .then((user) => {
-          const refreshedAuth = { ...adminAuth, user };
+    const token = adminAuth?.token;
+    if (!token) return undefined;
+    let active = true;
+
+    fetchData();
+    adminFetch('/session')
+      .then((response) => {
+        if (!response.ok) throw new Error('Admin session expired');
+        return response.json();
+      })
+      .then((user) => {
+        if (!active) return;
+        setAdminAuth((current) => {
+          if (current?.token !== token) return current;
+          const refreshedAuth = { ...current, user };
           localStorage.setItem('roadguard_admin_auth', JSON.stringify(refreshedAuth));
-          setAdminAuth(refreshedAuth);
-        })
-        .then(fetchData)
-        .catch(() => {
-          localStorage.removeItem('roadguard_admin_auth');
-          setAdminAuth(null);
+          return refreshedAuth;
         });
-    }
-  }, [adminAuth]);
+      })
+      .catch(() => {
+        if (!active) return;
+        localStorage.removeItem('roadguard_admin_auth');
+        setAdminAuth(null);
+      });
+
+    return () => { active = false; };
+  }, [adminAuth?.token]);
 
   useEffect(() => {
     if (!adminAuth) return undefined;
@@ -171,17 +180,20 @@ export default function App() {
       if (document.visibilityState === 'visible') fetchData({ quiet: true });
     }, 120_000);
     return () => window.clearInterval(timer);
-  }, [adminAuth]);
+  }, [adminAuth?.token]);
 
   // Create a fresh Leaflet instance when switching between the dashboard and full map.
   useEffect(() => {
     if (activeTab !== 'map' && activeTab !== 'dashboard') return;
     if (!mapContainerRef.current) return undefined;
 
-    const map = L.map(mapContainerRef.current, { center: [20.5937, 78.9629], zoom: 5, zoomControl: true });
+    const map = L.map(mapContainerRef.current, { center: [20.5937, 78.9629], zoom: 5, zoomControl: true, preferCanvas: true });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
+      keepBuffer: 2,
+      updateWhenIdle: true,
+      updateWhenZooming: false,
     }).addTo(map);
     const markers = L.layerGroup().addTo(map);
     mapInstanceRef.current = map;

@@ -29,7 +29,9 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const requestUrl = error.config?.url || '';
+    const isAuthValidation = requestUrl.includes('/api/auth/me');
+    if (error.response?.status === 401 && isAuthValidation) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';

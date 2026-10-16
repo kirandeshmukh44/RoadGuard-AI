@@ -236,11 +236,14 @@ def get_all_potholes(
         )
     
     potholes = query.order_by(Pothole.created_at.desc()).all()
+    user_ids = {p.user_id for p in potholes if p.user_id}
+    usernames = {
+        user_id: username
+        for user_id, username in db.query(User.id, User.username).filter(User.id.in_(user_ids)).all()
+    } if user_ids else {}
     
     results = []
     for p in potholes:
-        user = db.query(User).filter(User.id == p.user_id).first() if p.user_id else None
-        
         # normalize image url
         img_url = p.image_path
         if img_url and not img_url.startswith("http"):
@@ -251,7 +254,7 @@ def get_all_potholes(
         results.append({
             "id": p.id,
             "user_id": p.user_id,
-            "reported_by": user.username if user else "Anonymous / AI Agent",
+            "reported_by": usernames.get(p.user_id, "Anonymous / AI Agent"),
             "latitude": p.latitude,
             "longitude": p.longitude,
             "road_name": p.road_name or "Unnamed Road",

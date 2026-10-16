@@ -22,6 +22,7 @@ export const potholeAPI = {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
   getAll: (params) => api.get('/api/potholes', { params }),
+  getMapPotholes: () => api.get('/api/map/potholes'),
   getById: (id) => api.get(`/api/potholes/${id}`),
   update: (id, data) => api.put(`/api/potholes/${id}`, data),
   delete: (id) => api.delete(`/api/potholes/${id}`),
