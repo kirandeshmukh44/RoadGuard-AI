@@ -101,6 +101,11 @@ const Detect = () => {
       }
     }
 
+    if (!location.latitude || !location.longitude) {
+      setError('Add the pothole location first. Reports without GPS coordinates cannot appear on the shared road map.');
+      return;
+    }
+
     setLoading(true);
     setError('');
     setResult(null);
@@ -320,6 +325,7 @@ const Detect = () => {
                 <MapPin className="w-4 h-4 text-blue-600" />
                 GPS Coordinates
               </label>
+              <p className="mb-3 text-xs text-gray-500">Add the road location where this image or video was recorded. Only GPS-tagged reports can be shown to nearby users on the map.</p>
               <div className="flex gap-3">
                 <div className="flex-1">
                   <input

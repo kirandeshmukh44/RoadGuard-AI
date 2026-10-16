@@ -32,6 +32,8 @@ import {
 } from 'lucide-react';
 
 const API_BASE = '/api/admin';
+const isIndiaGps = (p) => Number(p.latitude) >= 6 && Number(p.latitude) <= 38
+  && Number(p.longitude) >= 68 && Number(p.longitude) <= 98;
 
 const adminFetch = (path, options = {}) => {
   const stored = localStorage.getItem('roadguard_admin_auth');
@@ -176,7 +178,7 @@ export default function App() {
     if (activeTab !== 'map' && activeTab !== 'dashboard') return;
     if (!mapContainerRef.current) return undefined;
 
-    const map = L.map(mapContainerRef.current, { center: [19.8762, 75.3433], zoom: 12, zoomControl: true });
+    const map = L.map(mapContainerRef.current, { center: [20.5937, 78.9629], zoom: 5, zoomControl: true });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
@@ -198,8 +200,7 @@ export default function App() {
     const markers = markersGroupRef.current;
     if (!map || !markers) return;
     markers.clearLayers();
-    const validPotholes = potholes.filter((p) => Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude))
-      && (Number(p.latitude) !== 0 || Number(p.longitude) !== 0));
+    const validPotholes = potholes.filter(isIndiaGps);
 
     validPotholes.forEach((p) => {
       const color = p.status === 'repaired' ? '#10b981' : p.severity === 'high' ? '#ef4444' : p.severity === 'medium' ? '#f59e0b' : '#0284c7';
@@ -293,6 +294,8 @@ export default function App() {
     );
     return matchStatus && matchSeverity && matchSearch;
   });
+  const indiaMappedPotholes = potholes.filter(isIndiaGps);
+  const indiaContributors = new Set(indiaMappedPotholes.map((p) => p.user_id || p.reported_by).filter(Boolean)).size;
 
   // If not authenticated, render Admin Login screen
   if (!adminAuth) {
@@ -517,7 +520,7 @@ export default function App() {
             <h2 className="text-xl font-bold text-slate-900 capitalize tracking-tight">
               {activeTab === 'dashboard' && 'Municipal Command & Analytics'}
               {activeTab === 'potholes' && 'Potholes Audit & Triage Management'}
-              {activeTab === 'map' && 'GIS Road Heatmap & Navigation'}
+              {activeTab === 'map' && 'India Road Pothole Map'}
               {activeTab === 'users' && 'System Access & User Privileges'}
             </h2>
             <p className="text-xs text-slate-500 font-medium">Real-time synchronized with field cameras and user submissions</p>
@@ -1058,8 +1061,8 @@ export default function App() {
             <div className="h-full flex flex-col space-y-4 max-w-7xl mx-auto">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">Road Infrastructure GIS Heatmap</h3>
-                  <p className="text-xs text-slate-500">Free OpenStreetMap tiles with interactive geolocation markers</p>
+                  <h3 className="text-base font-bold text-slate-900">India Road Reports</h3>
+                  <p className="text-xs text-slate-500">{indiaMappedPotholes.length} mapped reports from {indiaContributors} contributors across India</p>
                 </div>
                 <div className="flex items-center space-x-4 text-xs font-bold bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-xs">
                   <div className="flex items-center space-x-1.5">

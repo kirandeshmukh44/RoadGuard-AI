@@ -499,7 +499,7 @@ async def create_pothole_report(
 @app.get("/api/potholes", response_model=List[PotholeResponse])
 def get_potholes(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 1000,
     status: Optional[PotholeStatus] = None,
     severity: Optional[SeverityLevel] = None,
     db: Session = Depends(get_db)
