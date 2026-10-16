@@ -5,7 +5,7 @@ const Navbar = () => {
   const { user, logout, isAdmin } = useAuth();
   const location = useLocation();
   const publicLinks = [['/', 'Overview'], ['/about', 'About'], ['/how-it-works', 'How it works'], ['/map', 'Road map']];
-  const privateLinks = [['/dashboard', 'Dashboard'], ['/detect', 'Detect'], ['/report', 'Report'], ['/my-reports', 'My reports']];
+  const privateLinks = [['/dashboard', 'Dashboard'], ['/detect', 'Detect'], ['/report', 'Report'], ['/my-reports', 'My reports'], ['/map', 'Map']];
   const navLinkClass = ({ isActive }) =>
     `rounded-xl px-3.5 py-2 text-sm font-semibold transition-all duration-200 ${
       isActive
@@ -80,6 +80,7 @@ const Navbar = () => {
                 <li><Link to="/detect" className="rounded-xl hover:bg-slate-50">Detect potholes</Link></li>
                 <li><Link to="/report" className="rounded-xl hover:bg-slate-50">Report a pothole</Link></li>
                 <li><Link to="/my-reports" className="rounded-xl hover:bg-slate-50">My reports</Link></li>
+                <li><Link to="/map" className="rounded-xl hover:bg-slate-50">Shared pothole map</Link></li>
                 <li><Link to="/history" className="rounded-xl hover:bg-slate-50">Detection history</Link></li>
                 <li><Link to="/profile" className="rounded-xl hover:bg-slate-50">Profile</Link></li>
                 {isAdmin && (

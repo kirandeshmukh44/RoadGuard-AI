@@ -4,8 +4,10 @@ import { potholeAPI } from '../api';
 import { motion } from 'framer-motion';
 import 'leaflet/dist/leaflet.css';
 
-const isIndiaGps = (p) => Number(p.latitude) >= 6 && Number(p.latitude) <= 38
-  && Number(p.longitude) >= 68 && Number(p.longitude) <= 98;
+const hasGps = (p) => Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude))
+  && Number(p.latitude) >= -90 && Number(p.latitude) <= 90
+  && Number(p.longitude) >= -180 && Number(p.longitude) <= 180
+  && (Number(p.latitude) !== 0 || Number(p.longitude) !== 0);
 
 const distanceKm = (first, second) => {
   const radians = (degrees) => (degrees * Math.PI) / 180;
@@ -19,7 +21,7 @@ const distanceKm = (first, second) => {
 const FitPotholeBounds = ({ potholes, userLocation }) => {
   const map = useMap();
   const bounds = useMemo(() => potholes
-    .filter(isIndiaGps)
+    .filter(hasGps)
     .map((p) => [Number(p.latitude), Number(p.longitude)])
     .concat(userLocation ? [[userLocation.latitude, userLocation.longitude]] : []), [potholes, userLocation]);
 
@@ -61,13 +63,13 @@ const RoadMap = () => {
     }
   };
 
-  const indiaPotholes = useMemo(() => potholes.filter(isIndiaGps), [potholes]);
-  const filteredPotholes = useMemo(() => indiaPotholes.filter((p) => {
+  const mappedPotholes = useMemo(() => potholes.filter(hasGps), [potholes]);
+  const filteredPotholes = useMemo(() => mappedPotholes.filter((p) => {
     if (filter !== 'all' && p.status !== filter) return false;
     if (selectedSeverity !== 'all' && p.severity !== selectedSeverity) return false;
     if (nearMeEnabled && userLocation && distanceKm(userLocation, { latitude: Number(p.latitude), longitude: Number(p.longitude) }) > 25) return false;
     return true;
-  }), [indiaPotholes, filter, selectedSeverity, nearMeEnabled, userLocation]);
+  }), [mappedPotholes, filter, selectedSeverity, nearMeEnabled, userLocation]);
 
   const showNearbyPotholes = () => {
     setLocationError('');
@@ -102,9 +104,9 @@ const RoadMap = () => {
   };
 
   const severityCounts = {
-    high: indiaPotholes.filter(p => p.severity === 'high').length,
-    medium: indiaPotholes.filter(p => p.severity === 'medium').length,
-    low: indiaPotholes.filter(p => p.severity === 'low').length,
+    high: mappedPotholes.filter(p => p.severity === 'high').length,
+    medium: mappedPotholes.filter(p => p.severity === 'medium').length,
+    low: mappedPotholes.filter(p => p.severity === 'low').length,
   };
 
   if (loading) {
@@ -137,7 +139,7 @@ const RoadMap = () => {
       >
         <div className="stat glass-card rounded-xl p-4">
           <div className="stat-title text-gray-400">Total</div>
-          <div className="stat-value text-cyan-400 text-3xl">{indiaPotholes.length}</div>
+          <div className="stat-value text-cyan-400 text-3xl">{mappedPotholes.length}</div>
         </div>
         <div className="stat glass-card rounded-xl p-4">
           <div className="stat-title text-gray-400">High Severity</div>
@@ -188,7 +190,7 @@ const RoadMap = () => {
           </select>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-3 text-gray-400">
-          <span>Showing {filteredPotholes.length} of {indiaPotholes.length} India reports{nearMeEnabled ? ' within 25 km' : ''}</span>
+          <span>Showing {filteredPotholes.length} of {mappedPotholes.length} reports with GPS{nearMeEnabled ? ' within 25 km' : ''}</span>
           {!nearMeEnabled ? <button type="button" onClick={showNearbyPotholes} className="rounded-lg bg-blue-600 px-3 py-1.5 font-semibold text-white hover:bg-blue-700">Near me</button>
             : <button type="button" onClick={() => { setNearMeEnabled(false); setUserLocation(null); setLocationError(''); }} className="rounded-lg border border-cyan-400/30 px-3 py-1.5 font-semibold text-cyan-300 hover:bg-white/5">Show all India</button>}
           <button type="button" onClick={() => fetchPotholes()} className="rounded-lg border border-cyan-400/30 px-3 py-1.5 font-semibold text-cyan-300 hover:bg-white/5">Refresh map</button>
