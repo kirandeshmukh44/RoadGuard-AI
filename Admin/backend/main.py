@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -11,14 +11,17 @@ from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, 
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 import enum
+import bcrypt
 from jose import JWTError, jwt
 
 # Determine database path (default to shared road_monitoring.db in parent backend folder)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ADMIN_DIR = os.path.dirname(BASE_DIR)
 PROJECT_ROOT = os.path.dirname(ADMIN_DIR)
-sys.path.insert(0, os.path.join(PROJECT_ROOT, "User", "backend"))
-from app.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+# Read the User backend JWT settings without importing its AI/training stack.
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 DB_PATH = os.path.join(PROJECT_ROOT, "User", "backend", "road_monitoring.db")
 UPLOADS_DIR = os.path.join(PROJECT_ROOT, "User", "backend", "uploads")
 
@@ -147,7 +150,6 @@ if os.path.exists(UPLOADS_DIR):
 @app.post("/api/admin/login")
 def admin_login(creds: AdminLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == creds.username).first()
-    import bcrypt
     if not user or not user.is_active or user.role != UserRole.ADMIN or not bcrypt.checkpw(creds.password.encode("utf-8"), user.hashed_password.encode("utf-8")):
         raise HTTPException(status_code=401, detail="Invalid admin credentials")
     token = jwt.encode({"sub": user.username, "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)}, SECRET_KEY, algorithm=ALGORITHM)
@@ -159,12 +161,12 @@ def admin_session(current_admin: User = Depends(get_current_admin)):
 
 @app.get("/api/admin/health")
 def health():
-    return {
-        "status": "healthy",
-        "service": "Dedicated Admin Backend",
-        "db_connected": os.path.exists(DB_PATH),
-        "db_path": DB_PATH
-    }
+    try:
+        with engine.connect() as connection:
+            connection.execute(func.count().select().select_from(User.__table__)).scalar_one()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Admin database is unavailable") from exc
+    return {"status": "healthy", "service": "Dedicated Admin Backend", "db_connected": True}
 
 @app.get("/api/admin/stats")
 def get_admin_dashboard_stats(db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)):
@@ -331,7 +333,49 @@ def update_user(user_id: int, payload: UserRoleUpdate, db: Session = Depends(get
     db.refresh(user)
     return {"message": "User updated successfully", "user_id": user.id, "role": user.role}
 
+@app.delete("/api/admin/users/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.id == current_admin.id:
+        raise HTTPException(status_code=400, detail="You cannot delete the account currently signed in")
+    if user.role == UserRole.ADMIN:
+        remaining_admins = db.query(User).filter(User.role == UserRole.ADMIN, User.is_active == True, User.id != user.id).count()
+        if remaining_admins == 0:
+            raise HTTPException(status_code=400, detail="At least one active administrator account must remain")
+    owned_potholes = db.query(Pothole).filter(Pothole.user_id == user.id).all()
+    owned_reports = db.query(Report).filter(Report.user_id == user.id).all()
+    owned_pothole_ids = db.query(Pothole.id).filter(Pothole.user_id == user.id).subquery()
+    for pothole in owned_potholes:
+        if pothole.image_path:
+            media_path = os.path.abspath(os.path.join(UPLOADS_DIR, os.path.basename(pothole.image_path)))
+            if os.path.commonpath([os.path.abspath(UPLOADS_DIR), media_path]) == os.path.abspath(UPLOADS_DIR):
+                try:
+                    if os.path.isfile(media_path):
+                        os.remove(media_path)
+                except OSError:
+                    pass
+    reports_dir = os.path.join(PROJECT_ROOT, "User", "backend", "reports")
+    for report in owned_reports:
+        if report.report_path:
+            pdf_path = os.path.abspath(os.path.join(reports_dir, os.path.basename(report.report_path)))
+            if os.path.commonpath([os.path.abspath(reports_dir), pdf_path]) == os.path.abspath(reports_dir):
+                try:
+                    if os.path.isfile(pdf_path):
+                        os.remove(pdf_path)
+                except OSError:
+                    pass
+    db.query(Report).filter(Report.pothole_id.in_(owned_pothole_ids)).update({Report.pothole_id: None}, synchronize_session=False)
+    db.query(Pothole).filter(Pothole.duplicate_of.in_(owned_pothole_ids)).update({Pothole.duplicate_of: None}, synchronize_session=False)
+    db.query(Report).filter(Report.user_id == user.id).delete(synchronize_session=False)
+    db.query(Pothole).filter(Pothole.user_id == user.id).delete(synchronize_session=False)
+    db.delete(user)
+    db.commit()
+    return {"message": "User and associated submissions/reports deleted", "user_id": user_id}
+
 if __name__ == "__main__":
     import uvicorn
-    print(f"[Admin Backend] Starting on http://localhost:8006 (Linked DB: {DB_PATH})")
-    uvicorn.run("main:app", host="0.0.0.0", port=8006, reload=True)
+    port = int(os.getenv("ADMIN_API_PORT", "8006"))
+    print(f"[Admin Backend] Starting on http://127.0.0.1:{port} (Linked DB: {DB_PATH})")
+    uvicorn.run("main:app", host="127.0.0.1", port=port, reload=False)

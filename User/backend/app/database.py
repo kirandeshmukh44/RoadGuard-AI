@@ -78,6 +78,10 @@ class Pothole(Base):
     duplicate_pothole = relationship("Pothole", remote_side=[id])
     reports = relationship("Report", back_populates="pothole", cascade="all, delete-orphan")
 
+    @property
+    def reported_by(self):
+        return self.user.username if self.user else None
+
 
 class Report(Base):
     __tablename__ = "reports"

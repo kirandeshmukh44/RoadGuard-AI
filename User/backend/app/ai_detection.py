@@ -12,7 +12,6 @@ from .config import (
     MODEL_AVAILABLE,
     CONFIDENCE_THRESHOLD,
     IOU_THRESHOLD,
-    SEVERITY_THRESHOLDS,
     MAX_INPUT_SIZE,
     ENABLE_HALF_PRECISION,
     ENABLE_TORCH_COMPILE
@@ -195,7 +194,7 @@ class PotholeDetector:
                     total_area += area
             
             # Determine severity based on confidence and area
-            severity = self._calculate_severity(max_confidence, total_area, len(bounding_boxes))
+            severity = self._calculate_severity(max_confidence, total_area, len(bounding_boxes), image.shape[0] * image.shape[1])
             
             return {
                 "success": True,
@@ -256,10 +255,13 @@ class PotholeDetector:
             
             all_bounding_boxes = []
             max_confidence = 0.0
-            total_area = 0
             total_detections = 0
+            peak_frame_detections = 0
+            most_severe = 'low'
+            severity_rank = {'low': 0, 'medium': 1, 'high': 2}
             frames_processed = 0
             frame_idx = 0
+            sample_interval = max(1, round(fps)) if fps and fps > 0 else max(1, frame_skip)
             
             # Prepare inference arguments
             inference_args = {
@@ -279,7 +281,7 @@ class PotholeDetector:
                 if not ret:
                     break
                 
-                if frame_idx % frame_skip == 0:
+                if frame_idx % sample_interval == 0:
                     # Preprocess frame for faster inference
                     frame = self._preprocess_image(frame)
                     
@@ -288,6 +290,8 @@ class PotholeDetector:
                         results = self.model.predict(frame, imgsz=self.max_input_size, **inference_args)
                     
                     frames_processed += 1
+                    frame_boxes = []
+                    frame_area = frame.shape[0] * frame.shape[1]
                     
                     for result in results:
                         boxes = result.boxes
@@ -295,28 +299,38 @@ class PotholeDetector:
                             x1, y1, x2, y2 = box.xyxy[0].tolist()
                             confidence = float(box.conf[0])
                             
-                            all_bounding_boxes.append({
+                            detection = {
                                 "x1": float(x1),
                                 "y1": float(y1),
                                 "x2": float(x2),
                                 "y2": float(y2),
                                 "confidence": confidence,
                                 "frame": frame_idx
-                            })
+                            }
+                            frame_boxes.append(detection)
+                            if len(all_bounding_boxes) < 200:
+                                all_bounding_boxes.append(detection)
                             
                             if confidence > max_confidence:
                                 max_confidence = confidence
                             
-                            area = (x2 - x1) * (y2 - y1)
-                            total_area += area
                             total_detections += 1
+
+                    peak_frame_detections = max(peak_frame_detections, len(frame_boxes))
+                    frame_severity = self._calculate_severity(
+                        max((box['confidence'] for box in frame_boxes), default=0.0),
+                        sum((box['x2'] - box['x1']) * (box['y2'] - box['y1']) for box in frame_boxes),
+                        len(frame_boxes),
+                        frame_area,
+                    )
+                    if severity_rank[frame_severity] > severity_rank[most_severe]:
+                        most_severe = frame_severity
                 
                 frame_idx += 1
             
             cap.release()
             
-            # Determine severity based on aggregated results
-            severity = self._calculate_severity(max_confidence, total_area, total_detections)
+            severity = most_severe
             
             # Return representative bounding boxes (from first frame with detections)
             representative_boxes = [b for b in all_bounding_boxes if b.get("frame", 0) == 
@@ -324,8 +338,9 @@ class PotholeDetector:
             
             return {
                 "success": True,
-                "message": f"Processed {frames_processed} frames, detected {total_detections} pothole(s) total",
-                "potholes_detected": total_detections,
+                "message": f"Sampled {frames_processed} frames at about 1 frame/second; saw up to {peak_frame_detections} pothole(s) in one frame ({total_detections} detections across the clip)",
+                "potholes_detected": peak_frame_detections,
+                "detections_across_frames": total_detections,
                 "bounding_boxes": representative_boxes[:10],  # Limit to 10 for response
                 "all_detections": all_bounding_boxes,
                 "severity": severity,
@@ -346,33 +361,30 @@ class PotholeDetector:
                 "frames_processed": 0
             }
     
-    def _calculate_severity(self, confidence: float, total_area: float, count: int) -> str:
+    def _calculate_severity(self, _confidence: float, total_area: float, count: int, frame_area: Optional[float] = None) -> str:
         """
-        Calculate severity level based on detection confidence and area.
+        Estimate visual risk from the portion of a frame occupied by detections.
         
         Args:
-            confidence: Maximum confidence score
-            total_area: Total area of all detected potholes
-            count: Number of potholes detected
+            _confidence: Model confidence (kept for backward-compatible call sites)
+            total_area: Total pixel area covered by detections in one frame
+            count: Number of simultaneous pothole detections
+            frame_area: Total pixel area of the processed frame
             
         Returns:
             Severity level: 'low', 'medium', or 'high'
         """
-        # Primary factor: confidence
-        if confidence >= SEVERITY_THRESHOLDS["HIGH"]:
-            return "high"
-        elif confidence >= SEVERITY_THRESHOLDS["MEDIUM"]:
-            return "medium"
-        elif confidence >= SEVERITY_THRESHOLDS["LOW"]:
+        if count <= 0:
             return "low"
-        
-        # Secondary factor: area and count
-        if count > 5 or total_area > 50000:
+
+        # Confidence measures model certainty, not physical danger. Use the visible
+        # share of the frame and the number of simultaneous hazards for this estimate.
+        area_ratio = total_area / frame_area if frame_area and frame_area > 0 else 0.0
+        if area_ratio >= 0.12 or count >= 6:
             return "high"
-        elif count > 2 or total_area > 20000:
+        elif area_ratio >= 0.04 or count >= 3:
             return "medium"
-        else:
-            return "low"
+        return "low"
     
     def draw_bounding_boxes(self, image_path: str, bounding_boxes: List[dict], output_path: str):
         """
@@ -490,7 +502,7 @@ class PotholeDetector:
                             area = (x2 - x1) * (y2 - y1)
                             total_area += area
                     
-                    severity = self._calculate_severity(max_confidence, total_area, len(bounding_boxes))
+                    severity = self._calculate_severity(max_confidence, total_area, len(bounding_boxes), image.shape[0] * image.shape[1])
                     
                     result = {
                         "success": True,
@@ -580,7 +592,7 @@ class PotholeDetector:
                     total_area += area
                     total_detections += 1
             
-            severity = self._calculate_severity(max_confidence, total_area, total_detections)
+            severity = self._calculate_severity(max_confidence, total_area, total_detections, frame.shape[0] * frame.shape[1])
             
             return {
                 "success": True,

@@ -10,6 +10,7 @@ import shutil
 import uuid
 import json
 import os
+from pathlib import Path
 import yaml
 
 from .database import get_db, init_db, User, Pothole, Report, UserRole
@@ -271,10 +272,13 @@ async def detect_potholes_video(
 ):
     """Upload and detect potholes in a video using AI."""
     # Validate file type
-    if file.content_type not in ALLOWED_VIDEO_TYPES:
+    extension = Path(file.filename or "").suffix.lower()
+    allowed_video_extensions = {".mp4", ".avi", ".mov"}
+    allowed_video_mime_types = set(ALLOWED_VIDEO_TYPES) | {"video/quicktime", "video/x-msvideo"}
+    if extension not in allowed_video_extensions or file.content_type not in allowed_video_mime_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_VIDEO_TYPES)}"
+            detail="Invalid video type. Upload an MP4, AVI, or MOV file."
         )
     
     # Validate file size (50MB for videos)
@@ -312,7 +316,9 @@ async def detect_potholes_video(
             frames_processed=detection_result.get("frames_processed", 0),
             total_frames=None,
             video_fps=None,
-            all_detections=None
+            all_detections=None,
+            detections_across_frames=None,
+            severity_basis="This estimate does not measure pothole depth."
         )
     
     # Check for duplicates
@@ -385,7 +391,9 @@ async def detect_potholes_video(
         frames_processed=detection_result.get("frames_processed"),
         total_frames=detection_result.get("total_frames"),
         video_fps=detection_result.get("video_fps"),
-        all_detections=detection_result.get("all_detections")
+        all_detections=detection_result.get("all_detections"),
+        detections_across_frames=detection_result.get("detections_across_frames"),
+        severity_basis="This estimate does not measure pothole depth."
     )
 
 

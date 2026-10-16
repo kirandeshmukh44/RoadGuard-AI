@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import * as L from './vendor/leaflet/leaflet-src.esm.js';
+import './vendor/leaflet/leaflet.css';
 import {
   LayoutDashboard,
   MapPin,
@@ -79,6 +81,8 @@ export default function App() {
   const [selectedPothole, setSelectedPothole] = useState(null);
   const [updatingId, setUpdatingId] = useState(null);
   const [actionNotes, setActionNotes] = useState('');
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [userActionError, setUserActionError] = useState('');
 
   // Map state
   const mapContainerRef = useRef(null);
@@ -121,8 +125,8 @@ export default function App() {
   };
 
   // Load stats & data
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true);
     try {
       const [statsRes, potholesRes, usersRes] = await Promise.all([
         adminFetch('/stats').then(r => r.ok ? r.json() : null).catch(() => null),
@@ -135,7 +139,7 @@ export default function App() {
     } catch (err) {
       console.error('Error fetching admin data:', err);
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   };
 
@@ -159,63 +163,62 @@ export default function App() {
     }
   }, [adminAuth]);
 
-  // Initialize and update Leaflet Map
+  useEffect(() => {
+    if (!adminAuth) return undefined;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') fetchData({ quiet: true });
+    }, 120_000);
+    return () => window.clearInterval(timer);
+  }, [adminAuth]);
+
+  // Create a fresh Leaflet instance when switching between the dashboard and full map.
   useEffect(() => {
     if (activeTab !== 'map' && activeTab !== 'dashboard') return;
-    if (!window.L || !mapContainerRef.current) return;
+    if (!mapContainerRef.current) return undefined;
 
-    if (!mapInstanceRef.current) {
-      const initialLat = potholes.find(p => p.latitude && p.latitude !== 0)?.latitude || 19.8762;
-      const initialLng = potholes.find(p => p.longitude && p.longitude !== 0)?.longitude || 75.3433;
+    const map = L.map(mapContainerRef.current, { center: [19.8762, 75.3433], zoom: 12, zoomControl: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+    }).addTo(map);
+    const markers = L.layerGroup().addTo(map);
+    mapInstanceRef.current = map;
+    markersGroupRef.current = markers;
+    const resizeTimer = window.setTimeout(() => map.invalidateSize(), 100);
+    return () => {
+      window.clearTimeout(resizeTimer);
+      map.remove();
+      mapInstanceRef.current = null;
+      markersGroupRef.current = null;
+    };
+  }, [activeTab]);
 
-      const map = window.L.map(mapContainerRef.current, {
-        center: [initialLat, initialLng],
-        zoom: 12,
-        zoomControl: true,
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const markers = markersGroupRef.current;
+    if (!map || !markers) return;
+    markers.clearLayers();
+    const validPotholes = potholes.filter((p) => Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude))
+      && (Number(p.latitude) !== 0 || Number(p.longitude) !== 0));
+
+    validPotholes.forEach((p) => {
+      const color = p.status === 'repaired' ? '#10b981' : p.severity === 'high' ? '#ef4444' : p.severity === 'medium' ? '#f59e0b' : '#0284c7';
+      const marker = L.circleMarker([Number(p.latitude), Number(p.longitude)], {
+        radius: 9, fillColor: color, color: '#ffffff', weight: 2.5, opacity: 1, fillOpacity: 0.9,
       });
-
-      // Free Standard OpenStreetMap tiles (Light Theme Friendly)
-      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        maxZoom: 19,
-      }).addTo(map);
-
-      mapInstanceRef.current = map;
-      markersGroupRef.current = window.L.layerGroup().addTo(map);
+      const safeRoadName = String(p.road_name || 'Road Marker').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+      const safeReporter = String(p.reported_by || 'Unknown user').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+      marker.bindPopup(`<div style="font-size:13px;min-width:180px;padding:4px"><b>${safeRoadName}</b><br>Reported by: ${safeReporter}<br>Severity: ${p.severity}<br>Status: ${p.status}<br>Confidence: ${(Number(p.confidence || 0) * 100).toFixed(0)}%</div>`);
+      marker.on('click', () => setSelectedPothole(p));
+      markers.addLayer(marker);
+    });
+    if (validPotholes.length && !map._roadGuardDidFit) {
+      const bounds = L.latLngBounds(validPotholes.map((p) => [Number(p.latitude), Number(p.longitude)]));
+      map.fitBounds(bounds, { padding: [28, 28], maxZoom: 15 });
+      map._roadGuardDidFit = true;
     }
-
-    if (markersGroupRef.current && potholes.length > 0) {
-      markersGroupRef.current.clearLayers();
-
-      potholes.forEach((p) => {
-        if (!p.latitude && !p.longitude) return;
-
-        const color = p.status === 'repaired' ? '#10b981' : p.severity === 'high' ? '#ef4444' : p.severity === 'medium' ? '#f59e0b' : '#0284c7';
-
-        const customMarker = window.L.circleMarker([p.latitude, p.longitude], {
-          radius: 9,
-          fillColor: color,
-          color: '#ffffff',
-          weight: 2.5,
-          opacity: 1,
-          fillOpacity: 0.9,
-        });
-
-        const popupContent = `
-          <div style="font-family: inherit; font-size: 13px; min-width: 180px; padding: 4px;">
-            <div style="font-weight: 700; color: #0f172a; margin-bottom: 4px; font-size: 14px;">${p.road_name || 'Road Marker'}</div>
-            <div style="margin-bottom: 3px;"><b>Severity:</b> <span style="text-transform: capitalize; color: ${color}; font-weight: 700;">${p.severity}</span></div>
-            <div style="margin-bottom: 3px;"><b>Status:</b> <span style="text-transform: capitalize; font-weight: 600;">${p.status}</span></div>
-            <div style="font-size: 12px; color: #64748b;">Confidence: ${(p.confidence * 100).toFixed(0)}%</div>
-          </div>
-        `;
-
-        customMarker.bindPopup(popupContent);
-        customMarker.on('click', () => setSelectedPothole(p));
-        markersGroupRef.current.addLayer(customMarker);
-      });
-    }
-  }, [activeTab, potholes]);
+    window.setTimeout(() => map.invalidateSize(), 0);
+  }, [potholes, activeTab]);
 
   // Status Updater
   const handleUpdateStatus = async (potholeId, newStatus) => {
@@ -262,6 +265,24 @@ export default function App() {
     }
   };
 
+  const handleDeleteUser = async (user) => {
+    setUserActionError('');
+    if (user.username === adminAuth?.user?.username) {
+      setUserActionError('You cannot delete the account currently signed in.');
+      return;
+    }
+    if (!window.confirm(`Delete ${user.full_name || user.username}? Their account, pothole submissions, and generated reports will be permanently removed.`)) return;
+    try {
+      const response = await adminFetch(`/users/${user.id}`, { method: 'DELETE' });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.detail || 'Could not delete this user.');
+      setUsers((previous) => previous.filter((item) => item.id !== user.id));
+      if (selectedUser?.id === user.id) setSelectedUser(null);
+    } catch (error) {
+      setUserActionError(error.message);
+    }
+  };
+
   const filteredPotholes = potholes.filter(p => {
     const matchStatus = filterStatus === 'all' || p.status === filterStatus;
     const matchSeverity = filterSeverity === 'all' || p.severity === filterSeverity;
@@ -296,28 +317,6 @@ export default function App() {
               <p className="text-xs text-slate-500 mt-1 font-medium">
                 Municipal AI Road Condition Monitoring Console
               </p>
-            </div>
-
-            {/* Quick Demo Credentials Info Pill */}
-            <div className="mb-6 p-3.5 rounded-2xl bg-sky-50/80 border border-sky-100 flex items-center justify-between text-xs text-slate-700">
-              <div className="flex items-center space-x-2">
-                <KeyRound className="w-4 h-4 text-sky-600 shrink-0" />
-                <div>
-                  <div className="font-semibold text-slate-800">Admin Credentials:</div>
-                  <div className="text-[11px] font-mono text-sky-700">admin / admin@123</div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setLoginUsername('admin');
-                  setLoginPassword('admin@123');
-                  setLoginError('');
-                }}
-                className="text-[11px] font-bold text-sky-700 hover:text-sky-900 bg-white px-2.5 py-1 rounded-lg border border-sky-200 shadow-xs hover:shadow transition active:scale-95"
-              >
-                Auto-fill
-              </button>
             </div>
 
             {/* Error Message */}
@@ -663,7 +662,7 @@ export default function App() {
                   </div>
                   <div
                     ref={mapContainerRef}
-                    className="w-full h-84 rounded-2xl overflow-hidden border border-slate-200 z-10 shadow-inner"
+                    className="w-full h-[21rem] rounded-2xl overflow-hidden border border-slate-200 z-10 shadow-inner"
                   />
                 </div>
 
@@ -1084,7 +1083,7 @@ export default function App() {
 
               <div
                 ref={mapContainerRef}
-                className="w-full flex-1 min-h-[580px] rounded-3xl overflow-hidden border border-slate-200 shadow-md relative z-0"
+                className="w-full h-[min(72vh,850px)] min-h-[580px] rounded-3xl overflow-hidden border border-slate-200 shadow-md relative z-0"
               />
             </div>
           )}
@@ -1102,6 +1101,7 @@ export default function App() {
                     Total: {users.length} Users
                   </span>
                 </div>
+                {userActionError && <div role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{userActionError}</div>}
 
                 <div className="overflow-x-auto mt-4">
                   <table className="w-full text-left text-sm text-slate-600">
@@ -1111,7 +1111,7 @@ export default function App() {
                         <th className="py-3 px-4">Email</th>
                         <th className="py-3 px-4">System Role</th>
                         <th className="py-3 px-4">Submissions Logged</th>
-                        <th className="py-3 px-4 text-right">Access Controls</th>
+                        <th className="py-3 px-4 text-right">User Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium">
@@ -1133,6 +1133,8 @@ export default function App() {
                           </td>
                           <td className="py-3.5 px-4 font-mono font-bold text-slate-700">{u.reports_submitted || 0}</td>
                           <td className="py-3.5 px-4 text-right">
+                            <div className="inline-flex items-center gap-2">
+                            <button type="button" onClick={() => setSelectedUser(u)} className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 font-bold">View details</button>
                             <button
                               onClick={() => handleToggleUserRole(u.id, u.role)}
                               className={`text-xs px-3.5 py-1.5 rounded-xl font-bold transition duration-200 ${
@@ -1143,6 +1145,8 @@ export default function App() {
                             >
                               {u.role === 'admin' ? 'Revoke Admin' : 'Make Administrator'}
                             </button>
+                            <button type="button" onClick={() => handleDeleteUser(u)} className="text-xs px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white font-bold">Delete</button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1150,6 +1154,19 @@ export default function App() {
                   </table>
                 </div>
               </div>
+              {selectedUser && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={() => setSelectedUser(null)}>
+                  <section role="dialog" aria-modal="true" aria-labelledby="user-details-title" className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div><h3 id="user-details-title" className="text-lg font-extrabold text-slate-900">User details</h3><p className="mt-1 text-sm text-slate-500">Account information and submissions</p></div>
+                      <button type="button" onClick={() => setSelectedUser(null)} className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100" aria-label="Close details">Close</button>
+                    </div>
+                    <dl className="mt-5 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                      {[['Full name', selectedUser.full_name || 'Not provided'], ['Username', `@${selectedUser.username}`], ['Email', selectedUser.email], ['Role', selectedUser.role], ['Account status', selectedUser.is_active ? 'Active' : 'Disabled'], ['Pothole submissions', selectedUser.reports_submitted || 0], ['Joined', selectedUser.created_at ? new Date(selectedUser.created_at).toLocaleString() : 'Unknown']].map(([label, value]) => <div key={label} className="rounded-xl bg-slate-50 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt><dd className="mt-1 break-words font-semibold text-slate-900">{value}</dd></div>)}
+                    </dl>
+                  </section>
+                </div>
+              )}
             </div>
           )}
         </div>

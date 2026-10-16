@@ -1,8 +1,24 @@
 import { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from 'react-leaflet';
+import { MapContainer, TileLayer, Popup, CircleMarker, useMap } from 'react-leaflet';
 import { potholeAPI } from '../api';
 import { motion } from 'framer-motion';
 import 'leaflet/dist/leaflet.css';
+import { useMemo } from 'react';
+
+const FitPotholeBounds = ({ potholes }) => {
+  const map = useMap();
+  const bounds = useMemo(() => potholes
+    .filter((p) => Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude))
+      && (Number(p.latitude) !== 0 || Number(p.longitude) !== 0))
+    .map((p) => [Number(p.latitude), Number(p.longitude)]), [potholes]);
+
+  useEffect(() => {
+    if (bounds.length) map.fitBounds(bounds, { padding: [32, 32], maxZoom: 14 });
+    const timer = window.setTimeout(() => map.invalidateSize(), 100);
+    return () => window.clearTimeout(timer);
+  }, [map, bounds]);
+  return null;
+};
 
 const RoadMap = () => {
   const [potholes, setPotholes] = useState([]);
@@ -12,20 +28,25 @@ const RoadMap = () => {
 
   useEffect(() => {
     fetchPotholes();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') fetchPotholes({ quiet: true });
+    }, 120_000);
+    return () => window.clearInterval(timer);
   }, []);
 
-  const fetchPotholes = async () => {
+  const fetchPotholes = async ({ quiet = false } = {}) => {
     try {
       const response = await potholeAPI.getAll({ limit: 1000 });
-      setPotholes(response.data);
+      setPotholes(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Error fetching potholes:', error);
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   };
 
-  const filteredPotholes = potholes.filter(p => {
+  const filteredPotholes = potholes.filter((p) => Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude))
+    && (Number(p.latitude) !== 0 || Number(p.longitude) !== 0)).filter(p => {
     if (filter === 'all') return true;
     return p.status === filter;
   }).filter(p => {
@@ -72,9 +93,9 @@ const RoadMap = () => {
         animate={{ opacity: 1, y: 0 }}
         className="text-center"
       >
-        <h1 className="text-5xl font-bold mb-4 text-gradient">Road Condition Map</h1>
+          <h1 className="text-5xl font-bold mb-4 text-gradient">Community Road Condition Map</h1>
         <p className="text-xl text-gray-300">
-          Interactive map showing detected potholes across the region
+          Potholes submitted by all users are shown here. The map refreshes every 2 minutes.
         </p>
       </motion.div>
 
@@ -121,6 +142,7 @@ const RoadMap = () => {
             <option value="pending">Pending</option>
             <option value="verified">Verified</option>
             <option value="repaired">Repaired</option>
+            <option value="rejected">Rejected</option>
           </select>
         </div>
         <div className="flex items-center gap-2">
@@ -136,8 +158,9 @@ const RoadMap = () => {
             <option value="low">Low</option>
           </select>
         </div>
-        <div className="ml-auto text-gray-400">
-          Showing {filteredPotholes.length} of {potholes.length} potholes
+        <div className="ml-auto flex items-center gap-4 text-gray-400">
+          <span>Showing {filteredPotholes.length} mapped potholes</span>
+          <button type="button" onClick={() => fetchPotholes()} className="rounded-lg border border-cyan-400/30 px-3 py-1.5 font-semibold text-cyan-300 hover:bg-white/5">Refresh map</button>
         </div>
       </motion.div>
 
@@ -158,6 +181,7 @@ const RoadMap = () => {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           />
+          <FitPotholeBounds potholes={filteredPotholes} />
           {filteredPotholes.map((pothole) => (
             <CircleMarker
               key={pothole.id}
@@ -184,6 +208,7 @@ const RoadMap = () => {
                   </p>
                   <p className="text-sm"><strong>Confidence:</strong> {(pothole.confidence * 100).toFixed(1)}%</p>
                   <p className="text-sm"><strong>Status:</strong> {pothole.status.toUpperCase()}</p>
+                  <p className="text-sm"><strong>Reported by:</strong> {pothole.reported_by || `User #${pothole.user_id || 'unknown'}`}</p>
                   <p className="text-sm"><strong>Detected:</strong> {new Date(pothole.created_at).toLocaleDateString()}</p>
                 </div>
               </Popup>
@@ -191,6 +216,7 @@ const RoadMap = () => {
           ))}
         </MapContainer>
       </motion.div>
+      {filteredPotholes.length === 0 && <div className="-mt-4 rounded-xl border border-slate-700 bg-slate-900/70 p-4 text-center text-sm text-gray-300">No potholes with GPS coordinates match these filters yet.</div>}
 
       {/* Legend */}
       <motion.div

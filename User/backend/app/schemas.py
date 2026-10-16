@@ -89,6 +89,7 @@ class PotholeUpdate(BaseModel):
 class PotholeResponse(PotholeBase):
     id: int
     user_id: Optional[int]
+    reported_by: Optional[str] = None
     image_path: str
     severity: SeverityLevel
     confidence: float
@@ -129,6 +130,8 @@ class DetectionResult(BaseModel):
     total_frames: Optional[int] = None
     video_fps: Optional[float] = None
     all_detections: Optional[List[BoundingBox]] = None
+    detections_across_frames: Optional[int] = None
+    severity_basis: Optional[str] = None
 
 
 # Report Schemas

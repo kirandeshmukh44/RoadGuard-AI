@@ -43,22 +43,22 @@ const MyReports = () => {
     <div className="space-y-8 pb-10">
       <motion.section
         initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-900 p-7 text-white shadow-xl shadow-blue-950/15 sm:p-10"
+        className="relative overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-white via-sky-50 to-indigo-50 p-7 text-slate-900 shadow-xl shadow-blue-100/60 sm:p-10"
       >
-        <div className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full bg-cyan-400/20 blur-3xl" />
+        <div className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full bg-sky-300/30 blur-3xl" />
         <div className="relative flex flex-col gap-7 sm:flex-row sm:items-end sm:justify-between">
           <div className="max-w-2xl">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-cyan-100">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white/80 px-3 py-1.5 text-xs font-semibold text-blue-700">
               <ClipboardList className="h-4 w-4" /> REPORT CENTER
             </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">My road reports</h1>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-blue-100/80 sm:text-base">Track the potholes you have reported and download a copy of each generated report.</p>
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">My road reports</h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">Track the potholes you have reported and download a copy of each generated report.</p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button type="button" onClick={() => fetchReports({ quiet: true })} disabled={refreshing} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/15 disabled:opacity-60">
+            <button type="button" onClick={() => fetchReports({ quiet: true })} disabled={refreshing} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">
               <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
             </button>
-            <Link to="/report" className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-300 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-200">
+            <Link to="/report" className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-700">
               <Plus className="h-4 w-4" /> New report
             </Link>
           </div>

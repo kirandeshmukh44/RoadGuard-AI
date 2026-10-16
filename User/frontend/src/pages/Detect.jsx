@@ -441,14 +441,16 @@ const Detect = () => {
                 {/* Stats */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-4 bg-gray-50 rounded-xl">
-                    <div className="text-sm text-gray-500 mb-1">Potholes Detected</div>
+                    <div className="text-sm text-gray-500 mb-1">{result.detection_method === 'ai_video' ? 'Most in one frame' : 'Potholes Detected'}</div>
                     <div className="text-3xl font-bold text-gray-900">{result.potholes_detected}</div>
+                    {result.detection_method === 'ai_video' && <div className="mt-1 text-xs text-gray-500">{result.detections_across_frames || 0} detections across {result.frames_processed || 0} sampled frames</div>}
                   </div>
                   <div className="p-4 bg-gray-50 rounded-xl">
                     <div className="text-sm text-gray-500 mb-1">Confidence</div>
                     <div className="text-3xl font-bold text-gray-900">{(result.confidence * 100).toFixed(1)}%</div>
                   </div>
                 </div>
+                {result.severity_basis && <p className="text-xs leading-5 text-gray-500">Severity is a visual estimate from visible pothole area and how many appear together. Video is sampled at about one frame per second. {result.severity_basis}</p>}
 
                 {/* Severity */}
                 <div className="p-4 bg-gray-50 rounded-xl">
