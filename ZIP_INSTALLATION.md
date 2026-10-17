@@ -1,102 +1,113 @@
-# RoadGuard AI: ZIP मधून नवीन laptop वर installation
+RoadGuard AI: Installation on a New Laptop from a ZIP File
 
-ही guide project चा ZIP मित्राच्या Windows laptop वर extract करून पहिल्यांदा चालवण्यासाठी आहे. Commands **PowerShell** साठी आहेत.
+This guide explains how to extract the project ZIP file on a friend's Windows laptop and run it for the first time. All commands are for PowerShell.
 
-## 1. ZIP तयार/मिळवा आणि extract करा
+1. Get the ZIP File and Extract It
 
-Project चा ZIP पूर्णपणे extract करा. Extract झालेल्या root folder मध्ये `User`, `Admin` आणि `package.json` दिसले पाहिजेत. उदाहरणार्थ:
+Extract the project ZIP file completely. The extracted root folder should contain User, Admin, and package.json. For example:
 
-```text
 D:\RoadGuard\AI_Pothole_Detection_Road_Condition_Monitoring\
   User\
   Admin\
   package.json
-```
 
-File Explorer मध्ये त्या root folder मध्ये जा, address bar मध्ये `powershell` लिहून Enter दाबा. पुढील सर्व commands याच root folder मधून चालवा.
 
-## 2. आधी आवश्यक software install करा
+Open the root folder in File Explorer. Type powershell in the address bar and press Enter. Run all the following commands from this same root folder.
 
-- **Node.js LTS** (npm सहित)
-- **Python 3.12, 64-bit** (Windows वर Python Launcher `py` सहित)
-- ZIP extract करण्यासाठी Windows Explorer किंवा 7-Zip
+2. Install the Required Software First
+Node.js LTS (including npm)
+Python 3.12, 64-bit (including the Python Launcher py on Windows)
+Windows Explorer or 7-Zip to extract the ZIP file
 
-Install झाल्यावर नवीन PowerShell उघडा आणि तपासा:
+After installation, open a new PowerShell window and check the versions:
 
-```powershell
 node --version
 npm.cmd --version
 py -3.12 --version
-```
 
-यापैकी command सापडत नसेल तर संबंधित software install करून terminal पुन्हा उघडा.
 
-## 3. User app चे dependencies बसवा
+If any command is not recognized, install the required software and open PowerShell again.
 
-```powershell
+3. Install the User App Dependencies
 npm.cmd install --prefix User
 npm.cmd install --prefix User/frontend
 py -3.12 -m venv User/backend/venv
 User/backend/venv/Scripts/python.exe -m pip install --upgrade pip
 User/backend/venv/Scripts/python.exe -m pip install -r User/backend/requirements.txt
-```
 
-पहिल्यांदा Python packages बसायला वेळ लागू शकतो; PyTorch/OpenCV packages मोठे आहेत.
 
-Fresh database आणि सुरुवातीचा admin account तयार करा:
+The first installation may take some time because Python packages such as PyTorch and OpenCV are large.
 
-```powershell
+Create a fresh database and the first admin account:
+
 User/backend/venv/Scripts/python.exe User/backend/create_admin.py
-```
 
-पहिला admin login: `admin` / `admin@123`. Login नंतर password बदला. सामान्य user हा User portal वरून register करू शकतो.
 
-## 4. Admin app चे dependencies बसवा
+The first admin login details are:
 
-```powershell
+Username: admin
+Password: admin@123
+
+Change the password after logging in. Regular users can register through the User portal.
+
+4. Install the Admin App Dependencies
 npm.cmd install --prefix Admin
 npm.cmd install --prefix Admin/frontend
 py -3.12 -m venv Admin/backend/venv
 Admin/backend/venv/Scripts/python.exe -m pip install --upgrade pip
 Admin/backend/venv/Scripts/python.exe -m pip install -r Admin/backend/requirements.txt
-```
 
-## 5. दोन्ही apps चालवा
+5. Run Both Apps
 
-**PowerShell विंडो 1 — User:** project root मधून:
+PowerShell Window 1 — User: Run this command from the project root folder:
 
-```powershell
 npm.cmd run dev
-```
 
-Launcher ने दाखवलेला User portal URL browser मध्ये उघडा. Default frontend `http://localhost:5173` आणि API `http://localhost:8005` असतात. ही विंडो चालू ठेवा.
 
-**PowerShell विंडो 2 — Admin:** त्याच project root मधून:
+Open the User portal URL shown by the launcher in your browser. The default URLs are:
 
-```powershell
+Frontend: http://localhost:5173
+API: http://localhost:8005
+
+Keep this window running.
+
+PowerShell Window 2 — Admin: Open another PowerShell window and run these commands from the same project root folder:
+
 Set-Location Admin
 npm.cmd run dev
-```
 
-Launcher ने दाखवलेला Admin URL uघडा. Default frontend `http://localhost:5175` आणि API `http://localhost:8006` असतात. Admin आणि User एकच database वापरतात, म्हणून User backend चालू असणे गरजेचे आहे. थांबवण्यासाठी संबंधित terminal मध्ये `Ctrl+C` दाबा.
 
-## ZIP मध्ये कोणत्या गोष्टी येतात?
+Open the Admin URL shown by the launcher in your browser. The default URLs are:
 
-GitHub वरील **Download ZIP** किंवा Git source ZIP मध्ये खालील local/generated गोष्टी सहसा नसतात:
+Frontend: http://localhost:5175
+API: http://localhost:8006
 
-- `venv` आणि `node_modules` — प्रत्येक laptop वर पुन्हा तयार/install करा.
-- `User/backend/models/pothole_detection.pt` — AI photo/video detection साठी trained model.
-- `User/backend/road_monitoring.db` — जुन्या accounts आणि pothole records.
-- `User/backend/uploads/` आणि `User/backend/reports/` — आधीचे media/reports.
+The Admin and User apps use the same database, so the User backend must be running.
 
-Model ZIP मध्ये नसल्यास portals सुरू होतील आणि manual reporting चालेल; AI detection साठी model file स्वतंत्रपणे मिळवून `User/backend/models/pothole_detection.pt` या path वर ठेवा. जुना data हवा असल्यास database आणि संबंधित uploads/reports स्वतंत्रपणे copy करा. अगदी fresh setup मध्ये database admin script/backend ने तयार होईल.
+To stop either app, press Ctrl+C in its terminal window.
 
-## अडचणी आल्यास
+What Is Included in the ZIP File?
 
-- PowerShell मध्ये `source` चालत नाही. तो Bash command आहे; app सुरू करण्यासाठी venv activate करायची गरज नाही, वरील commands venv चा Python थेट वापरतात.
-- `npm` execution policy error आल्यास `npm` ऐवजी `npm.cmd` वापरा.
-- `Port ... already in use` आल्यास आधीचा User/Admin server terminal मध्ये `Ctrl+C` ने बंद करा; नंतर पुन्हा सुरू करा.
-- Map चा रस्ता/tiles दिसण्यासाठी internet लागतो. AI model आणि map tiles वेगवेगळ्या गोष्टी आहेत.
-- दुसऱ्या laptop वरून `venv` किंवा `node_modules` copy करू नका; त्या laptop वर commands वापरून नव्याने तयार करा.
+A ZIP downloaded using GitHub's Download ZIP option or a Git source ZIP usually does not include the following local or generated files and folders:
 
-सर्वसाधारण setup आणि इतर operating systems साठी [FRESH_INSTALLATION.md](FRESH_INSTALLATION.md) पहा.
+venv and node_modules — Create or install these again on each laptop.
+User/backend/models/pothole_detection.pt — The trained model needed for AI-based photo/video detection.
+User/backend/road_monitoring.db — The database containing existing user accounts and pothole records.
+User/backend/uploads/ and User/backend/reports/ — Previously uploaded media files and reports.
+
+If the model is not included in the ZIP, the portals may still start and manual reporting may work. However, AI-based detection requires the model file. Get the model separately and place it at this path:
+
+User/backend/models/pothole_detection.pt
+
+If you need the old data, copy the database and its related uploads and reports separately.
+
+For a completely fresh setup, the database will be created by the admin script or backend.
+
+Troubleshooting
+PowerShell does not support the source command because it is a Bash command. You do not need to activate the virtual environment. The commands above directly use the Python executable inside the virtual environment.
+If npm shows an execution policy error, use npm.cmd instead of npm.
+If you see a Port ... already in use error, stop the previous User or Admin server by pressing Ctrl+C in its terminal window. Then start it again.
+An internet connection is required to load map roads and tiles. The AI model and map tiles are separate things.
+Do not copy venv or node_modules from another laptop. Create them again on the new laptop by running the commands given in this guide.
+
+For general installation instructions and other operating systems, see FRESH_INSTALLATION.md.
