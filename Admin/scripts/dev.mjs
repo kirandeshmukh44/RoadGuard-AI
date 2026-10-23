@@ -13,8 +13,8 @@ const children = [];
 let stopping = false;
 const startupTimeoutMs = Number(process.env.ADMIN_STARTUP_TIMEOUT_MS || 30_000);
 
-function start(name, command, args, cwd) {
-  const child = spawn(command, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' && command === 'npm' });
+function start(name, command, args, cwd, options = {}) {
+  const child = spawn(command, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' && command === 'npm', ...options });
   children.push(child);
   child.on('error', (error) => {
     console.error(`[${name}] ${error.message}`);

@@ -143,9 +143,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve uploaded detection photos
-if os.path.exists(UPLOADS_DIR):
-    app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+# Serve the original user-uploaded detection photos from the shared uploads folder.
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 @app.post("/api/admin/login")
 def admin_login(creds: AdminLogin, db: Session = Depends(get_db)):
@@ -244,12 +244,12 @@ def get_all_potholes(
     
     results = []
     for p in potholes:
-        # normalize image url
-        img_url = p.image_path
-        if img_url and not img_url.startswith("http"):
-            # if relative or backend url, construct proper static link
-            clean_path = os.path.basename(img_url)
-            img_url = f"http://localhost:8005/uploads/{clean_path}"
+        # User uploads are stored as filenames in the shared database. The Admin
+        # API serves the same shared folder, so images work from this origin.
+        img_url = None
+        if p.image_path:
+            clean_path = os.path.basename(p.image_path.replace("\\", "/"))
+            img_url = f"/uploads/{clean_path}"
 
         results.append({
             "id": p.id,

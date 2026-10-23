@@ -21,7 +21,7 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/uploads': {
-        target: `http://127.0.0.1:${process.env.ADMIN_USER_API_PORT || 8005}`,
+        target: `http://127.0.0.1:${adminApiPort}`,
         changeOrigin: true,
       }
     }

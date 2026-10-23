@@ -32,6 +32,20 @@ import {
 } from 'lucide-react';
 
 const API_BASE = '/api/admin';
+const getImageUrl = (imagePath) => {
+  if (!imagePath) return '';
+  if (/^(data:|blob:)/i.test(imagePath)) return imagePath;
+  try {
+    const parsed = new URL(imagePath, window.location.origin);
+    // Older running Admin API processes may still return localhost:8005 URLs.
+    // Serve those shared uploads through the current Admin origin instead.
+    if (parsed.pathname.startsWith('/uploads/')) return `${parsed.pathname}${parsed.search}`;
+    return /^(https?:\/\/)/i.test(imagePath) ? imagePath : `/${parsed.pathname.replace(/^\/+/, '')}`;
+  } catch {
+    return imagePath;
+  }
+};
+const isVideoPath = (mediaPath) => /\.(mp4|webm|mov|avi)(?:$|[?#])/i.test(mediaPath || '');
 const isIndiaGps = (p) => Number(p.latitude) >= 6 && Number(p.latitude) <= 38
   && Number(p.longitude) >= 68 && Number(p.longitude) <= 98;
 
@@ -41,7 +55,6 @@ const adminFetch = (path, options = {}) => {
   try { token = stored ? JSON.parse(stored)?.token : null; } catch { /* Invalid storage is treated as signed out. */ }
   if (!token || token.startsWith('admin-session-')) {
     localStorage.removeItem('roadguard_admin_auth');
-    window.location.reload();
     return Promise.reject(new Error('Admin session expired'));
   }
   const headers = new Headers(options.headers || {});
@@ -49,7 +62,7 @@ const adminFetch = (path, options = {}) => {
   return fetch(`${API_BASE}${path}`, { ...options, headers }).then((response) => {
     if (response.status === 401 || response.status === 403) {
       localStorage.removeItem('roadguard_admin_auth');
-      window.location.reload();
+      window.dispatchEvent(new Event('roadguard-admin-session-expired'));
     }
     return response;
   });
@@ -83,6 +96,8 @@ export default function App() {
   const [selectedPothole, setSelectedPothole] = useState(null);
   const [updatingId, setUpdatingId] = useState(null);
   const [actionNotes, setActionNotes] = useState('');
+  const [potholeActionMessage, setPotholeActionMessage] = useState('');
+  const [potholeActionError, setPotholeActionError] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
   const [userActionError, setUserActionError] = useState('');
 
@@ -175,12 +190,27 @@ export default function App() {
   }, [adminAuth?.token]);
 
   useEffect(() => {
+    if (!selectedPothole) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setSelectedPothole(null);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [selectedPothole]);
+
+  useEffect(() => {
     if (!adminAuth) return undefined;
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') fetchData({ quiet: true });
-    }, 120_000);
+    }, 60_000);
     return () => window.clearInterval(timer);
   }, [adminAuth?.token]);
+
+  useEffect(() => {
+    const handleSessionExpired = () => setAdminAuth(null);
+    window.addEventListener('roadguard-admin-session-expired', handleSessionExpired);
+    return () => window.removeEventListener('roadguard-admin-session-expired', handleSessionExpired);
+  }, []);
 
   // Create a fresh Leaflet instance when switching between the dashboard and full map.
   useEffect(() => {
@@ -233,9 +263,20 @@ export default function App() {
     window.setTimeout(() => map.invalidateSize(), 0);
   }, [potholes, activeTab]);
 
+  useEffect(() => {
+    if (!selectedPothole) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setSelectedPothole(null);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [selectedPothole]);
+
   // Status Updater
   const handleUpdateStatus = async (potholeId, newStatus) => {
     setUpdatingId(potholeId);
+    setPotholeActionError('');
+    setPotholeActionMessage('');
     try {
       const res = await adminFetch(`/potholes/${potholeId}/status`, {
         method: 'PATCH',
@@ -247,15 +288,21 @@ export default function App() {
       });
 
       if (res.ok) {
+        const updated = await res.json().catch(() => ({}));
         setActionNotes('');
-        setPotholes(prev => prev.map(p => p.id === potholeId ? { ...p, status: newStatus } : p));
+        setPotholes(prev => prev.map(p => p.id === potholeId ? { ...p, ...updated, status: newStatus } : p));
         if (selectedPothole && selectedPothole.id === potholeId) {
-          setSelectedPothole(prev => ({ ...prev, status: newStatus }));
+          setSelectedPothole(prev => ({ ...prev, ...updated, status: newStatus }));
         }
+        setPotholeActionMessage(`Report marked ${newStatus}.`);
         adminFetch('/stats').then(r => r.json()).then(setStats).catch(() => {});
+      } else {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `Could not update report (${res.status}).`);
       }
     } catch (e) {
       console.error(e);
+      setPotholeActionError(e.message || 'Could not update this report. Please try again.');
     } finally {
       setUpdatingId(null);
     }
@@ -264,6 +311,7 @@ export default function App() {
   // User Role Switcher
   const handleToggleUserRole = async (userId, currentRole) => {
     const nextRole = currentRole === 'admin' ? 'user' : 'admin';
+    setUserActionError('');
     try {
       const res = await adminFetch(`/users/${userId}`, {
         method: 'PATCH',
@@ -272,9 +320,13 @@ export default function App() {
       });
       if (res.ok) {
         setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: nextRole } : u));
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setUserActionError(body.detail || `Could not update user role (${res.status}).`);
       }
     } catch (err) {
       console.error(err);
+      setUserActionError(err.message || 'Could not update user role.');
     }
   };
 
@@ -539,7 +591,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-3">
-            <button
+              <button type="button"
               onClick={fetchData}
               disabled={loading}
               className="flex items-center space-x-2 text-xs font-semibold px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-xs hover:shadow transition-all duration-200 active:scale-95"
@@ -577,7 +629,7 @@ export default function App() {
                 </div>
               </div>
 
-              <button
+              <button type="button"
                 onClick={handleAdminLogout}
                 title="Sign out of Admin Console"
                 className="flex items-center space-x-1.5 text-xs font-semibold px-3 py-2 rounded-xl text-rose-600 hover:text-rose-700 bg-rose-50/60 hover:bg-rose-100/80 border border-rose-200/60 transition-all duration-200 active:scale-95 cursor-pointer"
@@ -878,8 +930,8 @@ export default function App() {
               </div>
 
               {/* Table + Detail Drawer */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                <div className={`${selectedPothole ? 'lg:col-span-2' : 'lg:col-span-3'} light-glass-card rounded-3xl border border-slate-200/80 bg-white shadow-sm overflow-hidden`}>
+              <div className="grid grid-cols-1 gap-6 items-start">
+                <div className="light-glass-card rounded-3xl border border-slate-200/80 bg-white shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm text-slate-700">
                       <thead className="text-xs uppercase bg-slate-50 text-slate-500 border-b border-slate-100 font-bold">
@@ -896,20 +948,25 @@ export default function App() {
                         {filteredPotholes.map(p => (
                           <tr
                             key={p.id}
-                            onClick={() => setSelectedPothole(p)}
+                            onClick={() => { setSelectedPothole(p); setActionNotes(''); setPotholeActionMessage(''); setPotholeActionError(''); }}
                             className={`cursor-pointer transition-colors ${
                               selectedPothole?.id === p.id ? 'bg-sky-50/70 border-l-4 border-sky-500' : 'hover:bg-slate-50'
                             }`}
                           >
                             <td className="py-3 px-4">
-                              <img
-                                src={p.image_path}
-                                alt="Pothole"
-                                className="w-13 h-13 object-cover rounded-xl border border-slate-200 shadow-xs bg-slate-100"
-                                onError={(e) => {
-                                  e.target.src = 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?w=160&auto=format&fit=crop&q=60';
-                                }}
-                              />
+                              {isVideoPath(p.image_path) ? (
+                                <div className="flex h-13 w-13 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 text-sky-600" title="Video report"><Camera className="h-5 w-5" /></div>
+                              ) : (
+                                <img
+                                  src={getImageUrl(p.image_path)}
+                                  alt="Uploaded pothole"
+                                  className="w-13 h-13 object-cover rounded-xl border border-slate-200 shadow-xs bg-slate-100"
+                                  onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.src = '/pothole-placeholder.svg';
+                                  }}
+                                />
+                              )}
                             </td>
                             <td className="py-3 px-4">
                               <div className="font-bold text-slate-900">{p.road_name || 'Highway Section'}</div>
@@ -938,10 +995,13 @@ export default function App() {
                             </td>
                             <td className="py-3 px-4 text-xs font-semibold text-slate-500">{p.reported_by}</td>
                             <td className="py-3 px-4 text-right">
-                              <button
+                              <button type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSelectedPothole(p);
+                                  setActionNotes('');
+                                  setPotholeActionMessage('');
+                                  setPotholeActionError('');
                                 }}
                                 className="text-xs px-3 py-1.5 bg-sky-50 text-sky-600 hover:bg-sky-500 hover:text-white font-bold rounded-xl transition duration-150"
                               >
@@ -957,13 +1017,14 @@ export default function App() {
 
                 {/* Inspection Drawer */}
                 {selectedPothole && (
-                  <div className="light-glass-card p-6 rounded-3xl border border-slate-200/90 bg-white shadow-xl sticky top-4">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 sm:p-6" onClick={() => setSelectedPothole(null)}>
+                  <section role="dialog" aria-modal="true" aria-labelledby="pothole-audit-title" onClick={(event) => event.stopPropagation()} className="w-full max-w-5xl max-h-[94vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-7">
                     <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                       <div>
-                        <h4 className="font-extrabold text-slate-900 text-base">Pothole Audit #{selectedPothole.id}</h4>
+                        <h4 id="pothole-audit-title" className="font-extrabold text-slate-900 text-lg">Pothole Audit #{selectedPothole.id}</h4>
                         <p className="text-xs text-slate-500 font-medium">{selectedPothole.road_name}</p>
                       </div>
-                      <button
+                      <button type="button" aria-label="Close review"
                         onClick={() => setSelectedPothole(null)}
                         className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100 transition"
                       >
@@ -971,23 +1032,39 @@ export default function App() {
                       </button>
                     </div>
 
-                    <div className="mt-4 space-y-4">
+                    <div className="mt-5 grid grid-cols-1 gap-6 md:grid-cols-2">
                       {/* Image Viewer */}
-                      <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 h-48 relative shadow-inner">
-                        <img
-                          src={selectedPothole.image_path}
-                          alt="Detailed inspection"
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.target.src = 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?w=600&auto=format&fit=crop&q=80';
-                          }}
-                        />
+                      <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 min-h-64 max-h-[58vh] relative shadow-inner">
+                        {isVideoPath(selectedPothole.image_path) ? (
+                          <video
+                            key={selectedPothole.id}
+                            src={getImageUrl(selectedPothole.image_path)}
+                            aria-label="Uploaded pothole detection video"
+                            controls
+                            playsInline
+                            preload="metadata"
+                            className="absolute inset-0 h-full w-full object-contain"
+                          >
+                            Your browser cannot play this video.
+                          </video>
+                        ) : (
+                          <img
+                            src={getImageUrl(selectedPothole.image_path)}
+                            alt="User uploaded pothole detection"
+                            className="w-full h-full min-h-64 max-h-[58vh] object-contain"
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = '/pothole-placeholder.svg';
+                            }}
+                          />
+                        )}
                         <div className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-xl bg-white/90 backdrop-blur-md text-xs font-mono font-bold text-sky-700 shadow-sm">
                           Confidence: {(selectedPothole.confidence * 100).toFixed(0)}%
                         </div>
                       </div>
 
                       {/* Metadata */}
+                      <div className="space-y-4">
                       <div className="text-xs space-y-2.5 text-slate-700">
                         <div className="flex justify-between py-1 border-b border-slate-100">
                           <span className="text-slate-500">GPS Coordinates:</span>
@@ -1025,7 +1102,7 @@ export default function App() {
 
                       {/* Action Buttons */}
                       <div className="pt-2 grid grid-cols-2 gap-2">
-                        <button
+                        <button type="button"
                           onClick={() => handleUpdateStatus(selectedPothole.id, 'verified')}
                           disabled={updatingId === selectedPothole.id}
                           className="flex items-center justify-center space-x-1.5 py-2.5 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-700 border border-indigo-200 text-xs font-bold transition shadow-xs"
@@ -1034,7 +1111,7 @@ export default function App() {
                           <span>Verify</span>
                         </button>
 
-                        <button
+                        <button type="button"
                           onClick={() => handleUpdateStatus(selectedPothole.id, 'repaired')}
                           disabled={updatingId === selectedPothole.id}
                           className="flex items-center justify-center space-x-1.5 py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 border border-emerald-200 text-xs font-bold transition shadow-xs"
@@ -1043,7 +1120,7 @@ export default function App() {
                           <span>Mark Repaired</span>
                         </button>
 
-                        <button
+                        <button type="button"
                           onClick={() => handleUpdateStatus(selectedPothole.id, 'pending')}
                           disabled={updatingId === selectedPothole.id}
                           className="flex items-center justify-center space-x-1.5 py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-700 border border-amber-200 text-xs font-bold transition shadow-xs"
@@ -1052,7 +1129,7 @@ export default function App() {
                           <span>Reset Pending</span>
                         </button>
 
-                        <button
+                        <button type="button"
                           onClick={() => handleUpdateStatus(selectedPothole.id, 'rejected')}
                           disabled={updatingId === selectedPothole.id}
                           className="flex items-center justify-center space-x-1.5 py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 border border-rose-200 text-xs font-bold transition shadow-xs"
@@ -1061,7 +1138,11 @@ export default function App() {
                           <span>Reject / False</span>
                         </button>
                       </div>
+                      {potholeActionError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">{potholeActionError}</p>}
+                      {potholeActionMessage && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">{potholeActionMessage}</p>}
+                      </div>
                     </div>
+                  </section>
                   </div>
                 )}
               </div>

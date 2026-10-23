@@ -39,11 +39,12 @@ MAX_INPUT_SIZE = 640  # Max input dimension for faster inference
 ENABLE_HALF_PRECISION = True  # Use FP16 on GPU
 ENABLE_TORCH_COMPILE = False  # Compilation causes a long first-request delay on CPU.
 
-# Severity Classification (based on detection confidence and bounding box area)
+# Visual severity estimate based on the largest box in one frame and simultaneous count.
 SEVERITY_THRESHOLDS = {
-    "LOW": 0.25,      # Lowered to match confidence threshold
-    "MEDIUM": 0.50,   # Adjusted
-    "HIGH": 0.75      # Adjusted
+    "MEDIUM_AREA_RATIO": 0.08,
+    "HIGH_AREA_RATIO": 0.25,
+    "MEDIUM_COUNT": 3,
+    "HIGH_COUNT": 6,
 }
 
 # Duplicate Detection
