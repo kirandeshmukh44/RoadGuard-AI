@@ -1,29 +1,32 @@
-# Installed dependencies and build output
+# ─── Node.js ──────────────────────────────────────────────────
 **/node_modules/
 **/dist/
 **/coverage/
 
-# Local Python environments and cache
+# ─── Python ───────────────────────────────────────────────────
 **/venv/
 **/.venv/
 **/__pycache__/
 *.py[cod]
+*.pyo
+*.pyd
 
-# Local settings and secrets
+# ─── Environment / Secrets ─────────────────────────────────────
 **/.env
 **/.env.*
 !**/.env.example
 
-# Local database, uploaded media, generated reports, and logs
+# ─── Database, Uploads, Reports, Logs ─────────────────────────
 **/*.db
 **/*.db-shm
 **/*.db-wal
 User/backend/uploads/
 User/backend/reports/
 **/*.log
-*.bak
+**/*.bak
+**/*.tmp
 
-# Dataset and generated model artifacts are kept locally, not committed to Git
+# ─── AI Models & Training Data ────────────────────────────────
 User/backend/Dataset from kaggle/
 **/training_runs/
 **/models/*.pt
@@ -31,7 +34,7 @@ User/backend/Dataset from kaggle/
 **/models/*.engine
 yolov8n.pt
 
-# OS/editor files
+# ─── OS / Editor ──────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 .vscode/*
